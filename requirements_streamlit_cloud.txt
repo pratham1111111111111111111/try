@@ -1,0 +1,29 @@
+# Core
+pandas==2.2.3
+numpy==1.26.4
+scipy==1.14.1
+
+# Deep Learning / GRU
+tensorflow==2.18.0
+
+# Machine Learning
+scikit-learn==1.5.2
+xgboost==2.1.4
+
+# Time Series
+statsmodels==0.14.4
+prophet==1.1.6
+
+# Visualization
+matplotlib==3.9.2
+seaborn==0.13.2
+plotly==5.24.1
+
+# Streamlit
+streamlit==1.39.0
+
+# Utilities
+joblib==1.4.2
+cloudpickle==3.1.0
+python-dateutil==2.9.0.post0
+holidays==0.60
