@@ -1,0 +1,49 @@
+name: Automatic Model Retraining
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    - cron: "0 18 * * 0"
+
+  push:
+    paths:
+      - "traffic.csv"
+      - "src/multi_model_experiment.py"
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas numpy scikit-learn joblib mlflow
+
+      - name: Run automatic retraining
+        env:
+          MLFLOW_TRACKING_URI: sqlite:///mlflow.db
+        run: |
+          python src/multi_model_experiment.py
+
+      - name: Show model comparison
+        run: |
+          echo "Model Performance Comparison:"
+          cat models/model_comparison.csv
+
+      - name: Upload retraining results
+        uses: actions/upload-artifact@v4
+        with:
+          name: retraining-results
+          path: |
+            models/model_comparison.csv

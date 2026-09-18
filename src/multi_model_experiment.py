@@ -1,6 +1,6 @@
-import pandas as pd
-import numpy as np
+import os
 import joblib
+import pandas as pd
 import mlflow
 import mlflow.sklearn
 
@@ -11,13 +11,55 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 
-# -------------------------------------------------
-# 1. Load Dataset
-# -------------------------------------------------
+# ============================================================
+# 1. MLflow Configuration
+# ============================================================
 
-df = pd.read_csv("traffic.csv")
+# Local Windows MLflow database is used by default.
+# GitHub Actions can override this using MLFLOW_TRACKING_URI.
 
-# Convert DateTime
+MLFLOW_TRACKING_URI = os.getenv(
+    "MLFLOW_TRACKING_URI",
+    "sqlite:///C:/Users/91775/Desktop/mlopss/mlflow.db"
+)
+
+mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+
+EXPERIMENT_NAME = "Traffic_Anomaly_Detection"
+
+mlflow.set_experiment(EXPERIMENT_NAME)
+
+print("=" * 60)
+print("TRAFFIC ANOMALY DETECTION - MULTI MODEL EXPERIMENT")
+print("=" * 60)
+
+print(f"MLflow Tracking URI: {MLFLOW_TRACKING_URI}")
+print(f"MLflow Experiment: {EXPERIMENT_NAME}")
+
+
+# ============================================================
+# 2. Load Dataset
+# ============================================================
+
+DATA_PATH = "traffic.csv"
+
+print("\nLoading dataset...")
+
+df = pd.read_csv(DATA_PATH)
+
+print(f"Dataset shape: {df.shape}")
+
+print("\nDataset columns:")
+print(df.columns.tolist())
+
+
+# ============================================================
+# 3. Data Preprocessing
+# ============================================================
+
+print("\nPreprocessing data...")
+
+# Convert DateTime column to datetime
 df["DateTime"] = pd.to_datetime(df["DateTime"])
 
 # Create time-based features
@@ -28,11 +70,8 @@ df["Hour"] = df["DateTime"].dt.hour
 df["DayOfWeek"] = df["DateTime"].dt.dayofweek
 
 
-# -------------------------------------------------
-# 2. Features and Target
-# -------------------------------------------------
-
-features = [
+# Features
+FEATURES = [
     "Junction",
     "Year",
     "Month",
@@ -41,38 +80,33 @@ features = [
     "DayOfWeek"
 ]
 
-X = df[features]
-y = df["Vehicles"]
+TARGET = "Vehicles"
+
+X = df[FEATURES]
+y = df[TARGET]
 
 
-# -------------------------------------------------
-# 3. Train/Test Split
-# -------------------------------------------------
+# ============================================================
+# 4. Train-Test Split
+# ============================================================
 
 X_train, X_test, y_train, y_test = train_test_split(
     X,
     y,
-    test_size=0.2,
+    test_size=0.20,
     random_state=42
 )
 
-
-# -------------------------------------------------
-# 4. MLflow Configuration
-# -------------------------------------------------
-
-mlflow.set_tracking_uri(
-    "sqlite:///C:/Users/91775/Desktop/mlopss/mlflow.db"
-)
-
-mlflow.set_experiment("Traffic_Anomaly_Detection")
+print(f"\nTraining samples: {len(X_train)}")
+print(f"Testing samples: {len(X_test)}")
 
 
-# -------------------------------------------------
-# 5. Models
-# -------------------------------------------------
+# ============================================================
+# 5. Define Multiple Models
+# ============================================================
 
 models = {
+
     "Linear Regression": LinearRegression(),
 
     "Decision Tree": DecisionTreeRegressor(
@@ -81,36 +115,41 @@ models = {
 
     "Random Forest": RandomForestRegressor(
         n_estimators=50,
-        random_state=42
+        random_state=42,
+        n_jobs=-1
     )
 }
 
 
+# ============================================================
+# 6. Train and Evaluate Models
+# ============================================================
+
 results = []
 
+print("\n" + "=" * 60)
+print("MODEL TRAINING AND EVALUATION")
+print("=" * 60)
 
-# -------------------------------------------------
-# 6. Train Multiple Models
-# -------------------------------------------------
 
 for model_name, model in models.items():
 
-    print("\n" + "=" * 60)
-    print("Training:", model_name)
-    print("=" * 60)
+    print(f"\nTraining: {model_name}")
 
+    # Start MLflow run
     with mlflow.start_run(run_name=model_name):
 
-        # Train
+        # Train model
         model.fit(X_train, y_train)
 
-        # Prediction
+        # Predictions
         predictions = model.predict(X_test)
 
         # Metrics
-        rmse = np.sqrt(
-            mean_squared_error(y_test, predictions)
-        )
+        rmse = mean_squared_error(
+            y_test,
+            predictions
+        ) ** 0.5
 
         mae = mean_absolute_error(
             y_test,
@@ -122,21 +161,23 @@ for model_name, model in models.items():
             predictions
         )
 
+        # ----------------------------------------------------
         # Log parameters
+        # ----------------------------------------------------
+
         mlflow.log_param(
-            "model",
+            "model_name",
             model_name
         )
 
-        if model_name == "Random Forest":
-            mlflow.log_param(
-                "n_estimators",
-                50
-            )
+        mlflow.log_param(
+            "features",
+            ",".join(FEATURES)
+        )
 
         mlflow.log_param(
             "test_size",
-            0.2
+            0.20
         )
 
         mlflow.log_param(
@@ -144,102 +185,131 @@ for model_name, model in models.items():
             42
         )
 
+        # Log model-specific parameters
+        if model_name == "Random Forest":
+            mlflow.log_param(
+                "n_estimators",
+                50
+            )
+
+        # ----------------------------------------------------
         # Log metrics
-        mlflow.log_metric("RMSE", rmse)
-        mlflow.log_metric("MAE", mae)
-        mlflow.log_metric("R2", r2)
+        # ----------------------------------------------------
 
-        # Log model
-        if model_name in ["Random Forest", "Decision Tree"]:
-            mlflow.sklearn.log_model(
-                model,
-                name="model",
-                skops_trusted_types=[
-                    "sklearn.tree._tree.Tree"
-                ]
-            )
-        else:
-            mlflow.sklearn.log_model(
-                model,
-                name="model"
-            )
+        mlflow.log_metric(
+            "rmse",
+            rmse
+        )
 
-        # Get run ID
-        run_id = mlflow.active_run().info.run_id
+        mlflow.log_metric(
+            "mae",
+            mae
+        )
 
-        # Save result
+        mlflow.log_metric(
+            "r2",
+            r2
+        )
+
+        # ----------------------------------------------------
+        # Log model to MLflow
+        # ----------------------------------------------------
+
+        mlflow.sklearn.log_model(
+            model,
+            name="model",
+            skops_trusted_types=[
+                "sklearn.tree._tree.Tree"
+            ]
+        )
+
+        # Store results
         results.append({
             "Model": model_name,
             "RMSE": rmse,
             "MAE": mae,
-            "R2": r2,
-            "Run_ID": run_id
+            "R2": r2
         })
 
-        print("RMSE:", rmse)
-        print("MAE :", mae)
-        print("R2  :", r2)
-        print("Run ID:", run_id)
+        print(f"RMSE: {rmse}")
+        print(f"MAE : {mae}")
+        print(f"R2  : {r2}")
 
 
-# -------------------------------------------------
-# 7. Performance Comparison
-# -------------------------------------------------
+# ============================================================
+# 7. Model Performance Comparison
+# ============================================================
 
 results_df = pd.DataFrame(results)
 
+# Lower RMSE is better
 results_df = results_df.sort_values(
     by="RMSE",
     ascending=True
 )
 
-print("\n")
-print("=" * 60)
+print("\n" + "=" * 60)
 print("MODEL PERFORMANCE COMPARISON")
 print("=" * 60)
 
 print(results_df.to_string(index=False))
 
 
-# Save comparison
+# ============================================================
+# 8. Save Comparison Results
+# ============================================================
+
+os.makedirs("models", exist_ok=True)
+
+comparison_path = "models/model_comparison.csv"
+
 results_df.to_csv(
-    "models/model_comparison.csv",
+    comparison_path,
     index=False
 )
 
+print(f"\nModel comparison saved to: {comparison_path}")
 
-# -------------------------------------------------
-# 8. Best Model Selection
-# -------------------------------------------------
+
+# ============================================================
+# 9. Select Best Model
+# ============================================================
 
 best_model_name = results_df.iloc[0]["Model"]
 
-print("\nBest Model:")
-print(best_model_name)
+print("\n" + "=" * 60)
+print("BEST MODEL SELECTION")
+print("=" * 60)
+
+print(f"Best Model: {best_model_name}")
 
 
-# Recreate best model
+# Get best model object
 best_model = models[best_model_name]
 
-best_model.fit(X_train, y_train)
 
+# ============================================================
+# 10. Save Best Model
+# ============================================================
 
-# Save best model for FastAPI
+best_model_path = "models/traffic_model.joblib"
+
 joblib.dump(
     best_model,
-    "models/traffic_model.joblib"
+    best_model_path
 )
 
-print("\nBest model saved to:")
-print("models/traffic_model.joblib")
+print(f"Best model saved to: {best_model_path}")
 
 
-# -------------------------------------------------
-# 9. Register Best Model in MLflow
-# -------------------------------------------------
+# ============================================================
+# 11. Register Best Model in MLflow
+# ============================================================
+
+print("\nRegistering best model in MLflow...")
 
 with mlflow.start_run(
-    run_name="Best_Model_Selection"
+    run_name="Best_Model_Registration"
 ):
 
     mlflow.log_param(
@@ -248,39 +318,51 @@ with mlflow.start_run(
     )
 
     mlflow.log_metric(
-        "best_RMSE",
-        results_df.iloc[0]["RMSE"]
+        "best_rmse",
+        float(results_df.iloc[0]["RMSE"])
     )
 
     mlflow.log_metric(
-        "best_MAE",
-        results_df.iloc[0]["MAE"]
+        "best_mae",
+        float(results_df.iloc[0]["MAE"])
     )
 
     mlflow.log_metric(
-        "best_R2",
-        results_df.iloc[0]["R2"]
+        "best_r2",
+        float(results_df.iloc[0]["R2"])
     )
 
-    if best_model_name in [
-        "Random Forest",
-        "Decision Tree"
-    ]:
-        mlflow.sklearn.log_model(
-            best_model,
-            name="best_model",
-            registered_model_name="Traffic_Anomaly_Model",
-            skops_trusted_types=[
-                "sklearn.tree._tree.Tree"
-            ]
-        )
-    else:
-        mlflow.sklearn.log_model(
-            best_model,
-            name="best_model",
-            registered_model_name="Traffic_Anomaly_Model"
-        )
+    mlflow.sklearn.log_model(
+        best_model,
+        name="best_model",
+        registered_model_name="Traffic_Anomaly_Model",
+        skops_trusted_types=[
+            "sklearn.tree._tree.Tree"
+        ]
+    )
 
-print("\nBest model registered in MLflow.")
 
-print("\nExperiment completed successfully.")
+# ============================================================
+# 12. Final Output
+# ============================================================
+
+print("\n" + "=" * 60)
+print("AUTOMATIC MODEL TRAINING COMPLETED")
+print("=" * 60)
+
+print(f"Best Model : {best_model_name}")
+print(
+    f"Best RMSE  : {results_df.iloc[0]['RMSE']}"
+)
+print(
+    f"Best MAE   : {results_df.iloc[0]['MAE']}"
+)
+print(
+    f"Best R2    : {results_df.iloc[0]['R2']}"
+)
+
+print(f"Model File : {best_model_path}")
+print(f"Comparison : {comparison_path}")
+
+print("\nMLflow experiment completed successfully.")
+print("=" * 60)
