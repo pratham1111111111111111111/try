@@ -1,4 +1,3 @@
-/traffic.csv
 mlflow.db
 mlruns/
 models/*.joblib
