@@ -2,3 +2,4 @@
 mlflow.db
 mlruns/
 models/*.joblib
+__pycache__/
